@@ -1,0 +1,1 @@
+typeSearchIndex = [{"l":"All Classes","url":"allclasses-index.html"},{"p":"minimalcipj","l":"CIPClient"},{"p":"minimalcipj","l":"CIPDataFormatter"},{"p":"minimalcipj","l":"CIPException"},{"p":"minimalcipj","l":"CIPResponse"},{"p":"minimalcipj","l":"DPIOnlineReadFullResponse"},{"p":"minimalcipj","l":"PacketBuilder"}]
