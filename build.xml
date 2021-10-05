@@ -11,7 +11,7 @@
     <description>Builds, tests, and runs the project MinimalCIPJ.</description>
     <import file="nbproject/build-impl.xml"/>
     <target name="-post-compile">
-    	<copy todir="javadoc"><fileset dir="${dist.dir}/javadoc"/></copy>
+    	<copy todir="docs"><fileset dir="${dist.dir}/javadoc"/></copy>
     </target>
     <!--
 
