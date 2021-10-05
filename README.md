@@ -3,7 +3,7 @@ Minimal CIP, Ethernet/IP library in java used by ProtocolWhisperer. GetAttribute
 
 ## Overview
 
-This library allows GetAttribute and SetAttribute requests to network capable CIP devices such as PowerFlex drives. The library is implemented in ProtocolWhisperer to allow logging of paramaters.
+This library allows GetAttribute and SetAttribute requests to network capable CIP devices such as PowerFlex drives. The library is implemented in ProtocolWhisperer to allow logging of parameters.
 
 ## Supported objects
 
