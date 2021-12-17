@@ -21,7 +21,7 @@ import java.util.*;
  */
 public class DPIOnlineReadFullResponse extends CIPResponse{
     boolean readOnly = true;
-    int paramValue = 0;
+    double paramValue = 0;
     int minVal = 0;
     int maxVal = 0;
     int defaultVal = 0;
@@ -37,9 +37,16 @@ public class DPIOnlineReadFullResponse extends CIPResponse{
             {
                 readOnly = false;
             }
-            int decimalPlaces = buf[1] >> 4;
+            int decimalPlaces = buf[1] << 4;
             //4-7
-            paramValue = buf[4] + buf[5] * 256;
+            java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(4);
+
+            bb.put(buf[7]);
+            bb.put(buf[6]);
+            bb.put(buf[5]);
+            bb.put(buf[4]);
+            
+            paramValue = bb.getFloat(0);
             //8-11
             minVal = buf[8] + buf[9] * 256;
             //12-15
@@ -73,7 +80,7 @@ public class DPIOnlineReadFullResponse extends CIPResponse{
      * Returns the raw parameter value. This value must be formatted with the CIPDataFormatter object in order to display correctly.
      * @return An integer representing the raw parameter value.
      */
-    public int getParamValue()
+    public double getParamValue()
     {
         return paramValue;
     }
