@@ -30,6 +30,10 @@ public class CIPClient {
     InputStream is = null;
     OutputStream os = null;
     byte[] sessionHandle = null;
+    PacketBuilder builder = new PacketBuilder();
+    int seqNo = 1;
+    byte[] connectionId = null;
+    ArrayList<ControllerTag> tags = new ArrayList<ControllerTag>();
     /**
     * Constructs a CIPClient object that will connect to the supplied host
     * @param host IP or host of the CIP device to connect to
@@ -56,7 +60,10 @@ public class CIPClient {
     */
     public void disconnect() throws IOException
     {
-        clientSocket.close();
+        if (clientSocket != null)
+        {
+            clientSocket.close();
+        }
         clientSocket = null;
         is = null;
         os = null;
@@ -64,7 +71,10 @@ public class CIPClient {
     private void openSession() throws Exception
     {
         byte[] buf = new byte[256];
-        os.write(PacketBuilder.buildRegisterSessionPacket());
+        builder.setCommandCode(PacketBuilder.REGISTER_SESSION_COMMAND);
+        builder.setSessionHandle(new byte[] {0x00, 0x00, 0x00, 0x00});
+        builder.setCIPData(new byte[] {0x01, 0x00, 0x00, 0x00});
+        os.write(builder.getPacketInBytes());
         int len = is.read(buf);
         if (len > 0)
         {
@@ -81,6 +91,7 @@ public class CIPClient {
         if (buf[0] == 0x65 && buf[1] == 0x00 && buf.length >= 8)
         {
             sessionHandle = Arrays.copyOfRange(buf, 4, 8);
+            builder.setSessionHandle(sessionHandle);
         }
         else
         {
@@ -97,14 +108,23 @@ public class CIPClient {
     */
     public CIPResponse getAttribute(int cipClass, int cipInstance, int cipAttribute) throws Exception
     {
-        
-        os.write(PacketBuilder.buildGetAttributePacket(sessionHandle, cipClass, cipInstance, cipAttribute));
+        builder.setCIPData(new byte[]{});
+        builder.setCommandCode(PacketBuilder.SEND_RR_COMMAND);
+        builder.setService(new byte[]{0x0e});
+        builder.setClassId(new byte[]{(byte)cipClass});
+        builder.setInstanceId(PacketBuilder.intAsBytes(cipInstance));
+        builder.setAttributeId(new byte[] {(byte)cipAttribute});
+        builder.setInterfaceHandle(PacketBuilder.INTERFACE_HANDLE_CIP);
+        builder.clearCIPItems();
+        builder.addCIPDataItem(CIPItemFactory.getNullAddressItem());
+        builder.addCIPDataItem(CIPItemFactory.getUnconnectedDataItem(0));
+        os.write(builder.getPacketInBytes());
         return processResponse(cipClass, cipInstance, cipAttribute);
         
     }
     private CIPResponse processResponse(int cipClass, int cipInstance, int cipAttribute) throws Exception
     {
-        byte[] buf = new byte[256];
+        byte[] buf = new byte[1024];
         int len = 0;
         try
         {
@@ -128,27 +148,60 @@ public class CIPClient {
         {
             throw new CIPException("Bad length in response packet");
         }
-        if (!(buf[0] == 0x6f && buf[1] == 0x00))
-        {
-            throw new CIPException("Send RR data not received");
-        }
-        if (buf[42] != 0x00)
+        if (buf[8] != 0x00 || buf[9] != 0x00 || buf[10] != 0x00 || buf[11] != 0x00)
         {
             throw new CIPException("Unsuccessful CIP transaction");
         }
-        buf = Arrays.copyOfRange(buf, 44, len);
-        //DPI parameter object
-        if (cipClass == 0x93)
+        //got send rr data
+        if (buf[0] == 0x6f && buf[1] == 0x00)
         {
-            //DPI online read
-            if (cipAttribute == 0x07)
+            buf = Arrays.copyOfRange(buf, 44, len);
+            //DPI parameter object
+            if (cipClass == 0x93)
             {
-                return new DPIOnlineReadFullResponse(buf);
+                //DPI online read
+                if (cipAttribute == 0x07)
+                {
+                    return new DPIOnlineReadFullResponse(buf);
+                }
+                //DPI parameter value
+                if (cipAttribute == 0x09)
+                {
+                    return new CIPResponse(buf);
+                }
             }
-            //DPI parameter value
-            if (cipAttribute == 0x09)
+            //connection manager
+            if (cipClass == 0x06)
             {
-                return new CIPResponse(buf);
+                return new ForwardOpenResponse(buf);
+            }
+            
+        }
+        //got send unit data
+        else if (buf[0] == 0x70 && buf[1] == 0x00)
+        {
+            boolean successFlag = false;
+            boolean partialFlag = false;
+            if (buf[48] == 0x06 && buf[49] == 0x00)
+            {
+                partialFlag = true;
+            }
+            if (buf[48] == 0x00 && buf[49] == 0x00)
+            {
+                successFlag = true;
+            }
+            if (!partialFlag && !successFlag)
+            {
+                throw new CIPException("Bad CIP response");
+            }
+            buf = Arrays.copyOfRange(buf, 48, len);
+            if (cipClass == 0x6b)
+            {
+                return new TagListResponse(partialFlag, buf);
+            }
+            if (cipClass == 0x6c)
+            {
+                return new UDTTagResponse(buf);
             }
         }
         return new CIPResponse(buf);
@@ -167,5 +220,117 @@ public class CIPClient {
         
         os.write(PacketBuilder.buildSetAttributePacket(sessionHandle, cipClass, cipInstance, cipAttribute, data));
         return processResponse(cipClass, cipInstance, cipAttribute);
+    }
+    public void forwardOpen() throws Exception
+    {
+        builder.setCommandCode(PacketBuilder.SEND_RR_COMMAND);
+        builder.setInterfaceHandle(PacketBuilder.INTERFACE_HANDLE_CIP);
+        builder.addCIPDataItem(CIPItemFactory.getNullAddressItem());
+        builder.addCIPDataItem(CIPItemFactory.getUnconnectedDataItem(40));
+        builder.setService(new byte[]{(byte)0x54});
+        builder.setClassId(new byte[]{0x06});
+        builder.setInstanceId(new byte[]{0x01, 0x00});
+        byte[] data = new byte[] {0x06,
+            (byte)0x9a, //time out ticks
+            0x00, 0x00, 0x00, 0x01, //connection id
+            0x00, 0x00, 0x00, 0x01, //connection id
+            0x00, 0x00, //serial number
+            0x4d, 0x00, //vendor id
+            0x00, 0x00, 0x00, 0x01, //serial number
+            0x02, //timeout multiplier
+            0x01, 0x24, 0x01, //reserved
+            (byte)0x80, (byte)0x84, 0x1e, 0x00, //rpi
+            (byte)0xf8, 0x43, //parameters
+            (byte)0x80, (byte)0x84, 0x1e, 0x00, //rpi
+            (byte)0xf8, 0x43, //parameters
+            (byte)0xa3, //transport type
+            0x03, //connection path size in words
+            0x01, 0x00, //backplane port
+            0x20, 0x02, //message router class
+            0x24, 0x01 //instance 1
+        };
+        builder.setCIPData(data);
+        os.write(builder.getPacketInBytes());
+        ForwardOpenResponse response = (ForwardOpenResponse)processResponse(0x06, 0, 0);
+        connectionId = response.getConnectionId();
+    }
+    public void getTagList() throws Exception
+    {
+        if (connectionId == null)
+        {
+            forwardOpen();
+        }
+        prepareGetTagListPacket(new byte[] {0x00, 0x00});
+        os.write(builder.getPacketInBytes());
+        TagListResponse tagResponse = (TagListResponse)processResponse(0x6b, 0x00, 0x00);
+        addTags(tagResponse.getTags());
+        while (tagResponse.isPartial())
+        {
+            seqNo++;
+            prepareGetTagListPacket(tagResponse.getNextInstance());
+            os.write(builder.getPacketInBytes());
+            tagResponse = (TagListResponse)processResponse(0x6b, 0x00, 0x00);
+            addTags(tagResponse.getTags());
+        }
+        seqNo++;
+    }
+    public void getTagStructure(String tagName) throws Exception
+    {
+        ControllerTag tag = findTagByName(tagName);
+        builder.setCommandCode(PacketBuilder.SEND_UNIT_DATA_COMMAND);
+        builder.setService(new byte[] {0x01});
+        builder.setInterfaceHandle(PacketBuilder.INTERFACE_HANDLE_CIP);
+        builder.addCIPDataItem(CIPItemFactory.getConnectedAddressItem(connectionId));
+        builder.addCIPDataItem(CIPItemFactory.getConnectedDataItem(8, seqNo));
+        builder.setClassId(new byte[] {0x6c});
+        builder.setInstanceId(tag.getInstanceId());
+        os.write(builder.getPacketInBytes());
+        UDTTagResponse response = (UDTTagResponse)processResponse(0x6c, 0x00, 0x00);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.writeBytes(new byte[] {0x00, 0x00});
+        baos.writeBytes(new byte[] {0x00, 0x00});
+        baos.writeBytes(PacketBuilder.intAsBytes(response.getTagStructureLength()));
+        byte[] data = baos.toByteArray();
+        seqNo++;
+        builder.setCommandCode(PacketBuilder.SEND_UNIT_DATA_COMMAND);
+        builder.setService(new byte[] {0x4c});
+        builder.setInterfaceHandle(PacketBuilder.INTERFACE_HANDLE_CIP);
+        builder.addCIPDataItem(CIPItemFactory.getConnectedAddressItem(connectionId));
+        builder.addCIPDataItem(CIPItemFactory.getConnectedDataItem(data.length+8, seqNo));
+        builder.setClassId(new byte[] {0x6c});
+        builder.setInstanceId(tag.getInstanceId());
+        builder.setCIPData(data);
+        os.write(builder.getPacketInBytes());
+    }
+    public void addTags(ArrayList<ControllerTag> aTags)
+    {
+        for (int i = 0; i < aTags.size(); i++)
+        {
+            tags.add(aTags.get(i));
+        }
+    }
+    public void prepareGetTagListPacket(byte[] instanceId)
+    {
+        byte[] data = new byte[] {0x05, 0x00, 0x02, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x00, 0x0a, 0x00};
+        builder.setCommandCode(PacketBuilder.SEND_UNIT_DATA_COMMAND);
+        builder.setService(new byte[] {0x55});
+        builder.setInterfaceHandle(PacketBuilder.INTERFACE_HANDLE_CIP);
+        builder.addCIPDataItem(CIPItemFactory.getConnectedAddressItem(connectionId));
+        builder.addCIPDataItem(CIPItemFactory.getConnectedDataItem(data.length+8, seqNo));
+        builder.setClassId(new byte[] {0x6b});
+        builder.setInstanceId(instanceId);
+        builder.setCIPData(data);
+    }
+    public ControllerTag findTagByName(String name)
+    {
+        for (int i = 0; i < tags.size(); i++)
+        {
+            ControllerTag currentTag = tags.get(i);
+            if (currentTag.getTagName().contains(name))
+            {
+                return currentTag;
+            }
+        }
+        return null;
     }
 }

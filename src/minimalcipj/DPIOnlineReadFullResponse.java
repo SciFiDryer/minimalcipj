@@ -37,16 +37,9 @@ public class DPIOnlineReadFullResponse extends CIPResponse{
             {
                 readOnly = false;
             }
-            int decimalPlaces = buf[1] << 4;
-            //4-7
-            java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(4);
-
-            bb.put(buf[7]);
-            bb.put(buf[6]);
-            bb.put(buf[5]);
-            bb.put(buf[4]);
+            int dataType = (buf[0] & 0b00000111) ;
+            int decimalPlaces = (buf[1] >> 4) ;
             
-            paramValue = bb.getFloat(0);
             //8-11
             minVal = buf[8] + buf[9] * 256;
             //12-15
@@ -56,16 +49,32 @@ public class DPIOnlineReadFullResponse extends CIPResponse{
             //20-23
             units = new String(Arrays.copyOfRange(buf, 24, 28));
             //28-29
-            int multiplier = buf[28] + buf[29] * 256;
+            int multiplier = (buf[28] & 0xff) + (buf[29] & 0xff) * 256;
             //30-31
-            int divisior = buf[30] + buf[31] * 256;
+            int divisior = (buf[30] & 0xff) + (buf[31] & 0xff) * 256;
             //32-33
-            int base = buf[32] + buf[33] * 256;
+            int base = (buf[32] & 0xff) + (buf[33] & 0xff) * 256;
             //34-35
             int offset = buf[34] + buf[35] * 256;
             //39-55
             paramName = new String(Arrays.copyOfRange(buf, 39, 56));
             formatter = new CIPDataFormatter(decimalPlaces, multiplier, divisior, base, offset);
+            //4-7
+            if (dataType == 6)
+            {
+                java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(4);
+                bb.put(buf[7]);
+                bb.put(buf[6]);
+                bb.put(buf[5]);
+                bb.put(buf[4]);
+                paramValue = bb.getFloat(0);
+            }
+            else
+            {
+                paramValue = (buf[4] & 0xff) + ((buf[5] & 0xff) * 256) + ((buf[6] & 0xff) * 65536) + ((buf[7] & 0xff) * 16777216);
+                paramValue = formatter.getDisplayVal((int)paramValue);
+            }
+            
         }
     }
     /**
@@ -77,8 +86,8 @@ public class DPIOnlineReadFullResponse extends CIPResponse{
         return formatter;
     }
     /**
-     * Returns the raw parameter value. This value must be formatted with the CIPDataFormatter object in order to display correctly.
-     * @return An integer representing the raw parameter value.
+     * Returns the formatted parameter value.
+     * @return A double representing the formatted parameter value.
      */
     public double getParamValue()
     {
