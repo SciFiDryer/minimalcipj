@@ -20,13 +20,12 @@ try
     for (int i = 1; i < 400; i++)
     {
         DPIOnlineReadFullResponse response = (DPIOnlineReadFullResponse)client.getAttribute(0x93, i, 0x07);
-        CIPDataFormatter formatter = response.getCIPDataFormatter();
         String readWrite = "RO";
         if (!response.getReadOnly())
         {
             readWrite = "RW";
         }
-        System.out.println(readWrite + " " + response.getParamName() + ": " + formatter.getDisplayVal(response.getParamValue()) + response.getUnits());
+        System.out.println(readWrite + " " + response.getParamName() + ": " + response.getParamValue() + response.getUnits());
     }
 }
 catch(Exception e)
